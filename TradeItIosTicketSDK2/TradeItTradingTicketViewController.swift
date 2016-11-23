@@ -30,6 +30,7 @@ class TradeItTradingTicketViewController: TradeItViewController, TradeItSymbolSe
             assertionFailure("TradeItIosTicketSDK ERROR: TradeItTradingTicketViewController loaded without setting linkedBrokerAccount on order.")
         }
 
+        // TODO: Remove these button backgrounds
         self.buttonBackgrounds.forEach { buttonBackground in
             buttonBackground.backgroundColor = TradeItTheme.inputFrameColor
         }
