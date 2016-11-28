@@ -37,82 +37,69 @@ import UIKit
 
     static func configureTableHeader(header: UIView?) {
         guard let header = header else { return }
-        configureTableHeaderTheme(header: header)
+        configureTheme(view: header, withinTableHeader: true)
         header.setNeedsLayout()
         header.layoutIfNeeded()
     }
 
-    private static func configureTableHeaderTheme(header: UIView) {
-        //header.backgroundColor = TradeItTheme.tableHeaderBackgroundColor
-        configureTheme(view: header, withinTableViewHeader: true)
-        /*header.subviews.forEach { subview in
-            switch subview {
-            case let label as UILabel:
-                label.textColor = TradeItTheme.tableHeaderTextColor
-            default:
-                configureTableHeader(header: subview)
-            }
-        }*/
-    }
-
-    private static func configureTheme(view: UIView, withinTableViewHeader: Bool = false) {
-
-
-        view.backgroundColor = TradeItTheme.backgroundColor
-
+    private static func configureTheme(view: UIView, withinTableHeader: Bool = false, withinTableCell: Bool = false) {
+        var isTableCell = withinTableCell // TODO: This doesn't make sense
         switch view {
+        case let label as UILabel:
+            label.textColor = TradeItTheme.textColor
+        case let button as UIButton:
+            if button.backgroundColor == UIColor.clear {
+                button.setTitleColor(TradeItTheme.interactivePrimaryColor, for: .normal)
+            } else if button.title(for: .normal) == "Unlink Account" {
+                button.setTitleColor(TradeItTheme.warningSecondaryColor, for: .normal)
+                button.backgroundColor = TradeItTheme.warningPrimaryColor
+            } else {
+                button.setTitleColor(TradeItTheme.interactiveSecondaryColor, for: .normal)
+                button.backgroundColor = TradeItTheme.interactivePrimaryColor
+            }
+        case let input as UITextField:
+            input.backgroundColor = UIColor.clear
+            input.layer.borderColor = TradeItTheme.inputFrameColor.cgColor
+            input.layer.borderWidth = 1
+            input.layer.cornerRadius = 4
+            input.layer.masksToBounds = true
+            input.textColor = TradeItTheme.textColor
+            input.attributedPlaceholder = NSAttributedString(
+                string: input.placeholder ?? "",
+                attributes: [NSForegroundColorAttributeName: TradeItTheme.inputFrameColor]
+            )
+        case let input as UISwitch:
+            input.tintColor = TradeItTheme.interactivePrimaryColor
+            input.onTintColor = TradeItTheme.interactivePrimaryColor
+        case let imageView as UIImageView:
+            if isTemplateImage(imageView: imageView) {
+                let image = imageView.image?.withRenderingMode(.alwaysTemplate)
+                imageView.image = image
+                imageView.tintColor = TradeItTheme.interactivePrimaryColor
+            }
         case let tableView as UITableView:
             tableView.backgroundColor = TradeItTheme.tableBackgroundColor
+            print("GGG \(type(of: tableView.backgroundView))")
+            isTableCell = true
         case let cell as UITableViewCell:
-            /*if withinTableViewHeader {
+            if withinTableHeader {
                 cell.backgroundColor = TradeItTheme.tableHeaderBackgroundColor
-            } else {*/
+            } else {
+                isTableCell = true
                 cell.backgroundColor = TradeItTheme.tableBackgroundColor
-//            }
-        case let cell as UITableViewCellContentView:
-            cell.backgroundColor = UIColor.clear
+            }
         default:
-            print(type(of: view))
-//            view.backgroundColor = UIColor.clear
+//            print(type(of: view))
+            if !(withinTableCell || withinTableHeader) {
+                print("WHATTTT: \(type(of: view))")
+                view.backgroundColor = UIColor.red//TradeItTheme.backgroundColor
+            } else {
+//                view.backgroundColor = UIColor.clear
+            }
         }
 
         view.subviews.forEach { subview in
-            switch subview {
-            case let label as UILabel:
-                label.textColor = TradeItTheme.textColor
-            case let button as UIButton:
-                if button.backgroundColor == UIColor.clear {
-                    button.setTitleColor(TradeItTheme.interactivePrimaryColor, for: .normal)
-                } else if button.title(for: .normal) == "Unlink Account" {
-                    button.setTitleColor(TradeItTheme.warningSecondaryColor, for: .normal)
-                    button.backgroundColor = TradeItTheme.warningPrimaryColor
-                } else {
-                    button.setTitleColor(TradeItTheme.interactiveSecondaryColor, for: .normal)
-                    button.backgroundColor = TradeItTheme.interactivePrimaryColor
-                }
-            case let input as UITextField:
-                input.backgroundColor = UIColor.clear
-                input.layer.borderColor = TradeItTheme.inputFrameColor.cgColor
-                input.layer.borderWidth = 1
-                input.layer.cornerRadius = 4
-                input.layer.masksToBounds = true
-                input.textColor = TradeItTheme.textColor
-                input.attributedPlaceholder = NSAttributedString(
-                    string: input.placeholder ?? "",
-                    attributes: [NSForegroundColorAttributeName: TradeItTheme.inputFrameColor]
-                )
-            case let input as UISwitch:
-                input.tintColor = TradeItTheme.interactivePrimaryColor
-                input.onTintColor = TradeItTheme.interactivePrimaryColor
-            case let imageView as UIImageView:
-                if isTemplateImage(imageView: imageView) {
-                    let image = imageView.image?.withRenderingMode(.alwaysTemplate)
-                    imageView.image = image
-                    imageView.tintColor = TradeItTheme.interactivePrimaryColor
-                }
-            default:
-                configureTheme(view: subview, withinTableViewHeader: withinTableViewHeader)
-            }
+            configureTheme(view: subview, withinTableHeader: withinTableHeader, withinTableCell: isTableCell || withinTableCell)
         }
     }
 
