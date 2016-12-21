@@ -8,7 +8,6 @@
 
 #import "TradeItConnector.h"
 #import "TradeItJsonConverter.h"
-#import "TradeItErrorResult.h"
 #import "TradeItKeychain.h"
 #import "TradeItAuthLinkRequest.h"
 #import "TradeItBrokerListRequest.h"
@@ -21,6 +20,12 @@
 #import "TradeItOAuthAccessTokenResult.h"
 #import "TradeItOAuthLoginPopupUrlForTokenUpdateRequest.h"
 #import "TradeItOAuthLoginPopupUrlForTokenUpdateResult.h"
+
+#ifdef CARTHAGE
+#import <TradeItIosTicketSDK2Carthage/TradeItIosTicketSDK2Carthage-Swift.h>
+#else
+#import <TradeItIosTicketSDK2/TradeItIosTicketSDK2-Swift.h>
+#endif
 
 @implementation TradeItConnector {
     BOOL runAsyncCompletionBlockOnMainThread;
@@ -427,7 +432,7 @@ NSString * USER_DEFAULTS_SUITE = @"TRADEIT";
         TradeItResult *tradeItResult = [TradeItJsonConverter buildResult:[TradeItResult alloc]
                                                                jsonString:jsonResponse];
         
-        if ([tradeItResult.status isEqual:@"ERROR"]) {
+        /*if ([tradeItResult.status isEqual:@"ERROR"]) {
             TradeItErrorResult * errorResult;
             
             if (![tradeItResult isKindOfClass:[TradeItErrorResult class]]) {
@@ -438,9 +443,11 @@ NSString * USER_DEFAULTS_SUITE = @"TRADEIT";
             }
             
             tradeItResult = errorResult;
-        }
+        }*/
         
-        dispatch_async(dispatch_get_main_queue(),^(void){completionBlock(tradeItResult, jsonResponse);});
+        dispatch_async(dispatch_get_main_queue(), ^(void) {
+            completionBlock(tradeItResult, jsonResponse);
+        });
     });
 }
 
