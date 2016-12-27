@@ -4,7 +4,7 @@ import PromiseKit
     public var accountsLastUpdated: Date?
     public var accounts: [TradeItLinkedBrokerAccount] = []
     public var error: TradeItErrorResult?
-    var session: TradeItSession
+    public var session: TradeItSession
     var linkedLogin: TradeItLinkedLogin
 
     public var brokerName: String {
