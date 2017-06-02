@@ -1,18 +1,9 @@
-//
-//  TradeItAuthLinkResult.h
-//  TradeItIosEmsApi
-//
-//  Created by Antonio Reyes on 1/25/16.
-//  Copyright © 2016 TradeIt. All rights reserved.
-//
-
-#import <Foundation/Foundation.h>
 #import "TradeItResult.h"
 
 @interface TradeItAuthLinkResult : TradeItResult
 
-@property (nullable) NSString *userId;
-@property (nullable) NSString *userToken;
+@property (nonatomic, copy) NSString * _Nonnull userId;
+@property (nonatomic, copy) NSString * _Nonnull userToken;
 
 - (NSString * _Nonnull)description;
 

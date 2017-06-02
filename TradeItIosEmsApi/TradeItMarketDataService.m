@@ -7,23 +7,23 @@
 //
 
 #import "TradeItMarketDataService.h"
-#import "TradeItJsonConverter.h"
+#import "TradeItRequestResultFactory.h"
 #import "TradeItQuotesResult.h"
 #import "TradeItSymbolLookupResult.h"
 #import "TradeItQuote.h"
 
 @implementation TradeItMarketDataService
 
- -(id)initWithSession:(TradeItSession *)session {
+ -(id)initWithConnector:(TradeItConnector *)connector {
     self = [super init];
     if(self) {
-        self.session = session;
+        self.connector = connector;
     }
     return self;
 }
 
 - (void)getQuoteData:(TradeItQuotesRequest *)request withCompletionBlock:(void (^)(TradeItResult *))completionBlock {
-    request.apiKey = self.session.connector.apiKey;
+    request.apiKey = self.connector.apiKey;
 
     NSString *endpoint;
     if (request.isFxMarket) {
@@ -39,15 +39,15 @@
         return;
     }
 
-    NSMutableURLRequest *quoteRequest = [TradeItJsonConverter buildJsonRequestForModel:request
-                                                                             emsAction:endpoint
-                                                                           environment:self.session.connector.environment];
+    NSMutableURLRequest *quoteRequest = [TradeItRequestResultFactory buildJsonRequestForModel:request
+                                                                                    emsAction:endpoint
+                                                                                  environment:self.connector.environment];
 
-    [self.session.connector sendEMSRequest:quoteRequest withCompletionBlock:^(TradeItResult *result, NSMutableString *jsonResponse) {
+    [self.connector sendEMSRequest:quoteRequest withCompletionBlock:^(TradeItResult *result, NSMutableString *jsonResponse) {
         TradeItResult *resultToReturn = result;
 
         if ([result.status isEqual:@"SUCCESS"]) {
-            resultToReturn = [TradeItJsonConverter buildResult:[TradeItQuotesResult alloc] jsonString:jsonResponse];
+            resultToReturn = [TradeItRequestResultFactory buildResult:[TradeItQuotesResult alloc] jsonString:jsonResponse];
         }
 
         completionBlock(resultToReturn);
@@ -55,15 +55,15 @@
 }
 
 - (void)symbolLookup:(TradeItSymbolLookupRequest *)request withCompletionBlock:(void (^)(TradeItResult *))completionBlock {
-    NSMutableURLRequest *symbolLookupRequest = [TradeItJsonConverter buildJsonRequestForModel:request
-                                                                                    emsAction:@"marketdata/symbolLookup"
-                                                                                  environment:self.session.connector.environment];
+    NSMutableURLRequest *symbolLookupRequest = [TradeItRequestResultFactory buildJsonRequestForModel:request
+                                                                                           emsAction:@"marketdata/symbolLookup"
+                                                                                         environment:self.connector.environment];
     
-    [self.session.connector sendEMSRequest:symbolLookupRequest withCompletionBlock:^(TradeItResult *result, NSMutableString *jsonResponse) {
+    [self.connector sendEMSRequest:symbolLookupRequest withCompletionBlock:^(TradeItResult *result, NSMutableString *jsonResponse) {
         TradeItResult *resultToReturn = result;
         
         if ([result.status isEqual:@"SUCCESS"]) {
-            resultToReturn = [TradeItJsonConverter buildResult:[TradeItSymbolLookupResult alloc] jsonString:jsonResponse];
+            resultToReturn = [TradeItRequestResultFactory buildResult:[TradeItSymbolLookupResult alloc] jsonString:jsonResponse];
         }
 
         completionBlock(resultToReturn);

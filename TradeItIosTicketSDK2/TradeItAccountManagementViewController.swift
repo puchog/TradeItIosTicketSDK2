@@ -8,68 +8,24 @@ class TradeItAccountManagementViewController: TradeItViewController, TradeItAcco
     var linkBrokerUIFlow = TradeItLinkBrokerUIFlow()
 
     @IBOutlet weak var accountsTableView: UITableView!
+    @IBOutlet weak var adContainer: UIView!
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        precondition(self.linkedBroker != nil, "TradeItIosTicketSDK ERROR: TradeItAccountManagementViewController loaded without setting linkedBroker.")
+
+        precondition(self.linkedBroker != nil, "TradeItSDK ERROR: TradeItAccountManagementViewController loaded without setting linkedBroker!")
 
         self.accountManagementTableManager.delegate = self
         self.accountManagementTableManager.accountsTableView = self.accountsTableView
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .general, position: .bottom)
     }
 
     override func viewWillAppear(_ animated: Bool) {
         if let linkedBroker = self.linkedBroker {
-            self.navigationItem.title = linkedBroker.linkedLogin.broker
+            self.navigationItem.title = linkedBroker.brokerName
             self.accountManagementTableManager.updateAccounts(withAccounts: self.linkedBroker.accounts)
         }
-    }
-
-    // MARK: IBActions
-
-    @IBAction func relinkAccountWasTapped(_ sender: AnyObject) {
-        self.linkBrokerUIFlow.presentRelinkBrokerFlow(
-            inViewController: self,
-            linkedBroker: self.linkedBroker,
-            onLinked: { presentedNavController, linkedBroker in
-                presentedNavController.dismiss(animated: true, completion: nil)
-                self.linkedBroker.refreshAccountBalances(onFinished: {
-                    self.accountManagementTableManager.updateAccounts(withAccounts: self.linkedBroker.accounts)
-                })
-            },
-            onFlowAborted: { (presentedNavController: UINavigationController) -> Void in
-                //Nothing to do
-            }
-        )
-    }
-    
-    @IBAction func unlinkAccountWasTapped(_ sender: AnyObject) {
-        self.alertManager.showAlert(
-            onViewController: self,
-            withTitle: "Unlink \(self.linkedBroker.brokerName)",
-            withMessage: "Are you sure you want to unlink your account and remove all the associated data?",
-            withActionTitle: "Unlink",
-            onAlertActionTapped: { () -> Void in
-                
-                TradeItSDK.linkedBrokerManager.unlinkBroker(self.linkedBroker)
-
-                if (TradeItSDK.linkedBrokerManager.linkedBrokers.count) > 0 {
-                    _ = self.navigationController?.popViewController(animated: true)
-                } else {
-                    self.linkBrokerUIFlow.presentLinkBrokerFlow(
-                        fromViewController: self,
-                        showWelcomeScreen: true,
-                        onLinked: { presentedNavController, linkedBroker in
-                            presentedNavController.dismiss(animated: true, completion: nil)
-                        }, onFlowAborted: { (presentedNavController) in
-                            presentedNavController.dismiss(animated: true, completion: nil)
-                            // For now go back to the broker selection screen which has the option to add a broker
-                            _ = self.navigationController?.popViewController(animated: true)
-                        }
-                    )
-                }
-            },
-            showCancelAction: true
-        )
     }
 
     // MARK: TradeItAccountManagementTableViewManagerDelegate
@@ -93,14 +49,50 @@ class TradeItAccountManagementViewController: TradeItViewController, TradeItAcco
                 )
             },
             onFailure: { error in
-                self.alertManager.showRelinkError(error,
+                self.alertManager.showRelinkError(
+                    error: error,
                     withLinkedBroker: self.linkedBroker,
                     onViewController: self,
-                    onFinished : {
+                    onFinished: {
                         onRefreshComplete(self.linkedBroker.accounts)
                     }
                 )
             }
+        )
+    }
+
+    func relink() {
+        self.linkBrokerUIFlow.presentRelinkBrokerFlow(
+            inViewController: self,
+            linkedBroker: self.linkedBroker,
+            oAuthCallbackUrl: TradeItSDK.oAuthCallbackUrl)
+    }
+
+    func unlink() {
+        self.alertManager.showAlert(
+            onViewController: self,
+            withTitle: "Unlink \(self.linkedBroker.brokerName)",
+            withMessage: "Are you sure you want to unlink your account and remove all the associated data?",
+            withActionTitle: "Unlink",
+            onAlertActionTapped: { () -> Void in
+                TradeItSDK.linkedBrokerManager.unlinkBroker(self.linkedBroker)
+
+                // If the last linked broker was just unlinked then we need to use the TradeItBrokerManagementViewController
+                // that preceeds this view controller in the nav stack to launch the broker linking flow so that we can pop
+                // this view controller off the nav stack without the TradeItLinkBrokerUIFlow being garbage collected
+                if let navController = self.navigationController,
+                    let parentBrokerManagementView = navController.viewControllers[safe: navController.viewControllers.count - 2] as? TradeItBrokerManagementViewController {
+                    if TradeItSDK.linkedBrokerManager.linkedBrokers.count == 0 {
+                        parentBrokerManagementView.linkBrokerUIFlow.presentLinkBrokerFlow(
+                            fromViewController: navController,
+                            showWelcomeScreen: true,
+                            oAuthCallbackUrl: TradeItSDK.oAuthCallbackUrl
+                        )
+                    }
+                    navController.popViewController(animated: true)
+                }
+            },
+            showCancelAction: true
         )
     }
 }

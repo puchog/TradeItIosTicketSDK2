@@ -33,6 +33,7 @@ internal class ValueCellData: PreviewCellData {
 class TradeItTradePreviewViewController: TradeItViewController, UITableViewDelegate, UITableViewDataSource, AcknowledgementDelegate {
     @IBOutlet weak var orderDetailsTable: UITableView!
     @IBOutlet weak var placeOrderButton: UIButton!
+    @IBOutlet weak var adContainer: UIView!
 
     var linkedBrokerAccount: TradeItLinkedBrokerAccount!
     var previewOrderResult: TradeItPreviewOrderResult?
@@ -52,6 +53,8 @@ class TradeItTradePreviewViewController: TradeItViewController, UITableViewDeleg
         orderDetailsTable.dataSource = self
         orderDetailsTable.delegate = self
         updatePlaceOrderButtonStatus()
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .trading, position: .bottom)
     }
 
     @IBAction func placeOrderTapped(_ sender: UIButton) {
@@ -63,17 +66,27 @@ class TradeItTradePreviewViewController: TradeItViewController, UITableViewDeleg
         let activityView = MBProgressHUD.showAdded(to: self.view, animated: true)
         activityView.label.text = "Placing Order"
 
-        placeOrderCallback({ result in
-            activityView.hide(animated: true)
-            self.delegate?.orderSuccessfullyPlaced(onTradePreviewViewController: self, withPlaceOrderResult: result)
-        }, { error in
-            activityView.hide(animated: true)
-            self.alertManager.showRelinkError(error,
-                withLinkedBroker: self.linkedBrokerAccount.linkedBroker,
-                onViewController: self,
-                onFinished: {} // TODO: Retry?
-            )
-        })
+        placeOrderCallback(
+            { result in
+                activityView.hide(animated: true)
+                self.delegate?.orderSuccessfullyPlaced(onTradePreviewViewController: self, withPlaceOrderResult: result)
+            },
+            { error in
+                activityView.hide(animated: true)
+                guard let linkedBroker = self.linkedBrokerAccount.linkedBroker else {
+                    return self.alertManager.showError(
+                        error,
+                        onViewController: self
+                    )
+                }
+
+                self.alertManager.showRelinkError(
+                    error: error,
+                    withLinkedBroker: linkedBroker,
+                    onViewController: self
+                )
+            }
+        )
     }
 
     // MARK: UITableViewDelegate
@@ -126,11 +139,9 @@ class TradeItTradePreviewViewController: TradeItViewController, UITableViewDeleg
 
     private func updatePlaceOrderButtonStatus() {
         if allAcknowledgementsAccepted() {
-            placeOrderButton.isEnabled = true
-            placeOrderButton.backgroundColor = UIColor.tradeItClearBlueColor()
+            self.placeOrderButton.enable()
         } else {
-            placeOrderButton.isEnabled = false
-            placeOrderButton.backgroundColor = UIColor.tradeItGreyishBrownColor()
+            self.placeOrderButton.disable()
         }
     }
 
@@ -152,32 +163,33 @@ class TradeItTradePreviewViewController: TradeItViewController, UITableViewDeleg
 
         let orderDetailsPresenter = TradeItOrderDetailsPresenter(orderDetails: orderDetails)
         cells += [
-            ValueCellData(label: "ACCOUNT", value: linkedBrokerAccount.getFormattedAccountName()),
-            ValueCellData(label: "SYMBOL", value: orderDetails.orderSymbol),
-            ValueCellData(label: "QUANTITY", value: NumberFormatter.formatQuantity(orderDetails.orderQuantity)),
-            ValueCellData(label: "ACTION", value: orderDetailsPresenter.getOrderActionLabel()),
-            ValueCellData(label: "PRICE", value: orderDetails.orderPrice),
-            ValueCellData(label: "EXPIRATION", value: orderDetailsPresenter.getOrderExpirationLabel())
+            ValueCellData(label: "Symbol", value: orderDetails.orderSymbol),
+            ValueCellData(label: "Quantity", value: NumberFormatter.formatQuantity(orderDetails.orderQuantity)),
+            ValueCellData(label: "Action", value: orderDetailsPresenter.getOrderActionLabel()),
+            ValueCellData(label: "Price", value: orderDetails.orderPrice),
+            ValueCellData(label: "Expiration", value: orderDetailsPresenter.getOrderExpirationLabel())
         ] as [PreviewCellData]
 
         if let longHoldings = orderDetails.longHoldings {
-            cells.append(ValueCellData(label: "SHARES OWNED", value: NumberFormatter.formatQuantity(longHoldings)))
+            cells.append(ValueCellData(label: "Shares Owned", value: NumberFormatter.formatQuantity(longHoldings)))
         }
 
         if let shortHoldings = orderDetails.shortHoldings {
-            cells.append(ValueCellData(label: "SHARES HELD SHORT", value: NumberFormatter.formatQuantity(shortHoldings)))
-        }
-
-        if let buyingPower = orderDetails.buyingPower {
-            cells.append(ValueCellData(label: "BUYING POWER", value: formatCurrency(buyingPower)))
+            cells.append(ValueCellData(label: "Shares Held Short", value: NumberFormatter.formatQuantity(shortHoldings)))
         }
 
         if let estimatedOrderCommission = orderDetails.estimatedOrderCommission {
-            cells.append(ValueCellData(label: "BROKER FEE", value: formatCurrency(estimatedOrderCommission)))
+            cells.append(ValueCellData(label: "Broker Fee", value: formatCurrency(estimatedOrderCommission)))
         }
 
         if let estimatedTotalValue = orderDetails.estimatedTotalValue {
-            cells.append(ValueCellData(label: "ESTIMATED COST", value: formatCurrency(estimatedTotalValue)))
+            cells.append(ValueCellData(label: "Estimated Cost", value: formatCurrency(estimatedTotalValue)))
+        }
+
+        cells.append(ValueCellData(label: "Account", value: linkedBrokerAccount.getFormattedAccountName()))
+
+        if let buyingPower = orderDetails.buyingPower {
+            cells.append(ValueCellData(label: "Buying Power", value: formatCurrency(buyingPower)))
         }
 
         return cells
@@ -200,7 +212,7 @@ class TradeItTradePreviewViewController: TradeItViewController, UITableViewDeleg
     }
 
     private func formatCurrency(_ value: NSNumber) -> String {
-        return NumberFormatter.formatCurrency(value, currencyCode: TradeItPresenter.DEFAULT_CURRENCY_CODE)
+        return NumberFormatter.formatCurrency(value, currencyCode: self.linkedBrokerAccount.accountBaseCurrency)
     }
 }
 

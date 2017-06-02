@@ -16,17 +16,17 @@
 /**
  *  The session will need to be set for the request to be made
  */
-@property TradeItSession *session;
+@property TradeItConnector *connector;
 
 /**
- *  As the session needs to be set, this is the preferred init method
+ *  As the connector needs to be set, this is the preferred init method
  */
-- (id)initWithSession:(TradeItSession *)session;
+- (id)initWithConnector:(TradeItConnector *)connector;
 
 /**
  *  This method requires a TradeItQuoteRequest
  *
- *  @return successful response is a TradeItQuoteResult
+ *  @param completionBlock Completion callback where a successful response is a TradeItQuoteResult.
  *  - TradeItErrorResult also possible please see https://www.trade.it/api#ErrorHandling for descriptions of error codes
  *
  */
@@ -35,7 +35,7 @@
 /**
  *  This method requires a TradeItSymbolLookupRequest
  *
- *  @return successful response is a TradeItSymbolLookupResult
+ *  @param completionBlock Completion callback where a successful response is a TradeItSymbolLookupResult.
  *  - TradeItErrorResult also possible please see https://www.trade.it/api#ErrorHandling for descriptions of error codes
  *
  */

@@ -13,7 +13,7 @@
 #import "TradeItRequest.h"
 #import "TradeItResult.h"
 #import "TradeItErrorResult.h"
-#import "TradeItJsonConverter.h"
+#import "TradeItRequestResultFactory.h"
 #import "TradeItKeychain.h"
 
 // Start with the connector, you'll set your API key and the environment
@@ -47,7 +47,7 @@
 
 // Use the PublisherService to retrieve ad sources
 #import "TradeItAdsRequest.h"
-#import "TradeitAdsResult.h"
+#import "TradeItAdsResult.h"
 
 // Use the TradeService to preview and place trades
 #import "TradeItTradeService.h"
@@ -82,13 +82,5 @@
 
 // EMS API Util classes
 #import "TradeItTypeDefs.h"
-
-// TIEMSJSON
-#import "NSArray+TIEMSJSONModel.h"
-#import "TIEMSJSONAPI.h"
-#import "TIEMSJSONHTTPClient.h"
-#import "TIEMSJSONModel+networking.h"
-#import "TIEMSJSONModelClassProperty.h"
-#import "TIEMSJSONModelLib.h"
 
 #endif

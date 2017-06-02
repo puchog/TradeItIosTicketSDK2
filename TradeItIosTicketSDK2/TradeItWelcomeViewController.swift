@@ -1,10 +1,16 @@
 import UIKit
 
 class TradeItWelcomeViewController: TradeItViewController {
-    var delegate: TradeItWelcomeViewControllerDelegate?
+    internal weak var delegate: TradeItWelcomeViewControllerDelegate?
+    @IBOutlet var bullets: [UIView]!
+    @IBOutlet weak var adContainer: UIView!
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .welcome, position: .bottom)
+        for bullet in bullets {
+            bullet.backgroundColor = TradeItSDK.theme.interactivePrimaryColor
+        }
     }
 
     // MARK: IBActions
@@ -12,13 +18,8 @@ class TradeItWelcomeViewController: TradeItViewController {
     @IBAction func getStartedButtonWasTapped(_ sender: UIButton) {
         self.delegate?.getStartedButtonWasTapped(self)
     }
-
-    override func closeButtonWasTapped(_ sender: UIBarButtonItem) {
-        self.delegate?.cancelWasTapped(fromWelcomeViewController: self)
-    }
 }
 
-protocol TradeItWelcomeViewControllerDelegate {
+protocol TradeItWelcomeViewControllerDelegate: class {
     func getStartedButtonWasTapped(_ fromViewController: TradeItWelcomeViewController)
-    func cancelWasTapped(fromWelcomeViewController welcomeViewController: TradeItWelcomeViewController)
 }

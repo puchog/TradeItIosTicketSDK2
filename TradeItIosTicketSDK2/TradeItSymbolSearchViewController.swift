@@ -5,6 +5,7 @@ class TradeItSymbolSearchViewController: TradeItViewController, UITableViewDeleg
     @IBOutlet weak var symbolSearchResultsTableView: UITableView!
     @IBOutlet weak var searchTextField: UITextField!
     @IBOutlet weak var searchResultTableView: UITableView!
+    @IBOutlet weak var adContainer: UIView!
 
     private var symbolSearchResults: [TradeItSymbolLookupCompany] = []
     weak var delegate: TradeItSymbolSearchViewControllerDelegate?
@@ -14,6 +15,8 @@ class TradeItSymbolSearchViewController: TradeItViewController, UITableViewDeleg
 
         self.activityIndicator.hidesWhenStopped = true
         setupSearchTextField()
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .trading, position: .bottom)
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -40,7 +43,7 @@ class TradeItSymbolSearchViewController: TradeItViewController, UITableViewDeleg
 
         self.activityIndicator.startAnimating()
 
-        TradeItSDK.marketDataService.symbolLookup(
+        TradeItSDK.symbolService.symbolLookup(
             resultText,
             onSuccess: { results in
                 self.activityIndicator.stopAnimating()
@@ -49,7 +52,8 @@ class TradeItSymbolSearchViewController: TradeItViewController, UITableViewDeleg
             },
             onFailure: { error in
                 self.activityIndicator.stopAnimating()
-            })
+            }
+        )
 
         return true
     }
@@ -73,7 +77,6 @@ class TradeItSymbolSearchViewController: TradeItViewController, UITableViewDeleg
         let cell = tableView.dequeueReusableCell(withIdentifier: "SYMBOL_SEARCH_CELL_ID") as! TradeItSymbolSearchTableViewCell
         let symbolResult = self.symbolSearchResults[indexPath.row]
         cell.populateWith(symbolResult)
-
         return cell
     }
 }

@@ -1,98 +1,134 @@
 import UIKit
 import MBProgressHUD
 
-class TradeItTradingTicketViewController: TradeItViewController, TradeItSymbolSearchViewControllerDelegate, TradeItAccountSelectionViewControllerDelegate {
-    @IBOutlet weak var symbolView: TradeItSymbolView!
-    @IBOutlet weak var tradingBrokerAccountView: TradeItTradingBrokerAccountView!
-    @IBOutlet weak var orderActionButton: UIButton!
-    @IBOutlet weak var orderTypeButton: UIButton!
-    @IBOutlet weak var orderExpirationButton: UIButton!
-    @IBOutlet weak var orderQuantityInput: UITextField!
-    @IBOutlet weak var orderTypeInput1: UITextField!
-    @IBOutlet weak var orderTypeInput2: UITextField!
-    @IBOutlet weak var estimatedChangeLabel: UILabel!
+class TradeItTradingTicketViewController: TradeItViewController, UITableViewDataSource, UITableViewDelegate, TradeItAccountSelectionViewControllerDelegate, TradeItSymbolSearchViewControllerDelegate {
+    @IBOutlet weak var tableView: TradeItDismissableKeyboardTableView!
     @IBOutlet weak var previewOrderButton: UIButton!
-    @IBOutlet weak var bottomConstraint: NSLayoutConstraint!
+    @IBOutlet weak var adContainer: UIView!
 
-    static let BOTTOM_CONSTRAINT_CONSTANT = CGFloat(20)
+    public weak var delegate: TradeItTradingTicketViewControllerDelegate?
 
-    var alertManager = TradeItAlertManager()
-    weak var delegate: TradeItTradingTicketViewControllerDelegate?
-    
-    var viewControllerProvider = TradeItViewControllerProvider()
-    var order = TradeItOrder()
+    internal var order = TradeItOrder()
+
+    private var alertManager = TradeItAlertManager()
+    private let viewProvider = TradeItViewControllerProvider()
+    private var selectionViewController: TradeItSelectionViewController!
+    private var accountSelectionViewController: TradeItAccountSelectionViewController!
+    private var symbolSearchViewController: TradeItSymbolSearchViewController!
+    private let marketDataService = TradeItSDK.marketDataService
+    private var quotePresenter: TradeItQuotePresenter?
+
+    private var ticketRows = [TicketRow]()
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        guard let linkedBrokerAccount = self.order.linkedBrokerAccount else {
-            preconditionFailure("TradeItIosTicketSDK ERROR: TradeItTradingTicketViewController loaded without setting linkedBrokerAccount on order.")
+
+        guard let selectionViewController = self.viewProvider.provideViewController(forStoryboardId: .tradingSelectionView) as? TradeItSelectionViewController else {
+            assertionFailure("ERROR: Could not instantiate TradeItSelectionViewController from storyboard")
+            return
         }
-        prepopulateOrderForm()
-        accountSelected(linkedBrokerAccount: linkedBrokerAccount)
+        self.selectionViewController = selectionViewController
+
+        guard let accountSelectionViewController = self.viewProvider.provideViewController(forStoryboardId: .accountSelectionView) as? TradeItAccountSelectionViewController else {
+            assertionFailure("ERROR: Could not instantiate TradeItAccountSelectionViewController from storyboard")
+            return
+        }
+        accountSelectionViewController.delegate = self
+        self.accountSelectionViewController = accountSelectionViewController
+
+        guard let symbolSearchViewController = self.viewProvider.provideViewController(forStoryboardId: .symbolSearchView) as? TradeItSymbolSearchViewController else {
+            assertionFailure("ERROR: Could not instantiate TradeItSymbolSearchViewController from storyboard")
+            return
+        }
+        symbolSearchViewController.delegate = self
+        self.symbolSearchViewController = symbolSearchViewController
+
+        self.setOrderDefaults()
+
+        self.tableView.delegate = self
+        self.tableView.dataSource = self
+        self.tableView.tableFooterView = UIView()
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .trading, position: .bottom)
     }
 
     override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        registerKeyboardNotifications()
-        registerTextFieldNotifications()
-    
-        guard let linkedBroker = self.order.linkedBrokerAccount?.linkedBroker, linkedBroker.isStillLinked() else {
-            self.presentAccountSelectionScreen()
+        super.viewWillAppear(true)
+        self.reloadTicket()
+    }
+
+    // MARK: UITableViewDelegate
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let ticketRow = self.ticketRows[indexPath.row]
+
+        switch ticketRow {
+        case .symbol:
+            self.navigationController?.pushViewController(self.symbolSearchViewController, animated: true)
+        case .account:
+            self.navigationController?.pushViewController(self.accountSelectionViewController, animated: true)
+        case .orderAction:
+            self.selectionViewController.initialSelection = TradeItOrderActionPresenter.labelFor(self.order.action)
+            self.selectionViewController.selections = TradeItOrderActionPresenter.labels()
+            self.selectionViewController.onSelected = { (selection: String) in
+                self.order.action = TradeItOrderActionPresenter.enumFor(selection)
+                _ = self.navigationController?.popViewController(animated: true)
+            }
+
+            self.navigationController?.pushViewController(selectionViewController, animated: true)
+        case .orderType:
+            self.selectionViewController.initialSelection = TradeItOrderPriceTypePresenter.labelFor(self.order.type)
+            self.selectionViewController.selections = TradeItOrderPriceTypePresenter.labels()
+            self.selectionViewController.onSelected = { (selection: String) in
+                self.order.type = TradeItOrderPriceTypePresenter.enumFor(selection)
+                _ = self.navigationController?.popViewController(animated: true)
+            }
+
+            self.navigationController?.pushViewController(selectionViewController, animated: true)
+        case .expiration:
+            self.selectionViewController.initialSelection = TradeItOrderExpirationPresenter.labelFor(self.order.expiration)
+            self.selectionViewController.selections = TradeItOrderExpirationPresenter.labels()
+            self.selectionViewController.onSelected = { (selection: String) in
+                self.order.expiration = TradeItOrderExpirationPresenter.enumFor(selection)
+                _ = self.navigationController?.popViewController(animated: true)
+            }
+
+            self.navigationController?.pushViewController(selectionViewController, animated: true)
+        default:
             return
         }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        struct StaticVars {
+            static var rowHeights = [String:CGFloat]()
+        }
 
-        NotificationCenter.default.removeObserver(self)
+        let ticketRow = self.ticketRows[indexPath.row]
+
+        guard let height = StaticVars.rowHeights[ticketRow.cellReuseId] else {
+            let cell = tableView.dequeueReusableCell(withIdentifier: ticketRow.cellReuseId)
+            let height = cell?.bounds.size.height ?? tableView.rowHeight
+            StaticVars.rowHeights[ticketRow.cellReuseId] = height
+            return height
+        }
+
+        return height
     }
 
-    // MARK: Text field change handlers
+    // MARK: UITableViewDataSource
 
-    func textFieldDidChange(_ textField: UITextField) {
-        // TODO: Should probably check the order price type instead of placeholder text to determine which value changed
-        if textField.placeholder == "Limit Price" {
-            order.limitPrice = NSDecimalNumber(string: textField.text)
-        } else if textField.placeholder == "Stop Price" {
-            order.stopPrice = NSDecimalNumber(string: textField.text)
-        } else if textField.placeholder == "Quantity" {
-            order.quantity = NSDecimalNumber(string: textField.text)
-            updateEstimatedChangedLabel()
-        }
-        updatePreviewOrderButtonStatus()
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return self.ticketRows.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        return self.provideCell(rowIndex: indexPath.row)
     }
 
     // MARK: IBActions
 
-    @IBAction func orderActionTapped(_ sender: UIButton) {
-        presentOptions(
-            title: "Order Action",
-            options: TradeItOrderActionPresenter.labels(),
-            sender: sender,
-            handler: self.orderActionSelected
-        )
-    }
-
-    @IBAction func orderTypeTapped(_ sender: UIButton) {
-        presentOptions(
-            title: "Order Type",
-            options: TradeItOrderPriceTypePresenter.labels(),
-            sender: sender,
-            handler: self.orderTypeSelected
-        )
-    }
-
-    @IBAction func orderExpirationTapped(_ sender: UIButton) {
-        presentOptions(
-            title: "Order Expiration",
-            options: TradeItOrderExpirationPresenter.labels(),
-            sender: sender,
-            handler: self.orderExpirationSelected
-        )
-    }
-
-    @IBAction func previewOrderTapped(_ sender: UIButton) {
+    @IBAction func previewOrderButtonTapped(_ sender: UIButton) {
         guard let linkedBroker = self.order.linkedBrokerAccount?.linkedBroker
             else { return }
 
@@ -102,20 +138,21 @@ class TradeItTradingTicketViewController: TradeItViewController, TradeItSymbolSe
         linkedBroker.authenticateIfNeeded(
             onSuccess: {
                 activityView.label.text = "Previewing Order"
-                self.order.preview(onSuccess: { previewOrderResult, placeOrderCallback in
-                    activityView.hide(animated: true)
-                    self.delegate?.orderSuccessfullyPreviewed(onTradingTicketViewController: self,
-                                                              withPreviewOrderResult: previewOrderResult,
-                                                              placeOrderCallback: placeOrderCallback)
-                }, onFailure: { error in
-                    activityView.hide(animated: true)
-                    self.alertManager.showRelinkError(
-                        error,
-                        withLinkedBroker: linkedBroker,
-                        onViewController: self,
-                        onFinished: {} // TODO: Retry?
-                    )
-                })
+                self.order.preview(
+                    onSuccess: { previewOrderResult, placeOrderCallback in
+                        activityView.hide(animated: true)
+                        self.delegate?.orderSuccessfullyPreviewed(onTradingTicketViewController: self,
+                                                                  withPreviewOrderResult: previewOrderResult,
+                                                                  placeOrderCallback: placeOrderCallback)
+                    }, onFailure: { errorResult in
+                        activityView.hide(animated: true)
+                        self.alertManager.showRelinkError(
+                            error: errorResult,
+                            withLinkedBroker: self.order.linkedBrokerAccount?.linkedBroker,
+                            onViewController: self
+                        )
+                    }
+                )
             },
             onSecurityQuestion: { securityQuestion, answerSecurityQuestion, cancelSecurityQuestion in
                 activityView.hide(animated: true)
@@ -128,341 +165,360 @@ class TradeItTradingTicketViewController: TradeItViewController, TradeItSymbolSe
             },
             onFailure: { errorResult in
                 activityView.hide(animated: true)
-                self.alertManager.showRelinkError(errorResult,
-                    withLinkedBroker: linkedBroker,
-                    onViewController: self,
-                    onFinished: {})
+                self.alertManager.showRelinkError(
+                    error: errorResult,
+                    withLinkedBroker: self.order.linkedBrokerAccount?.linkedBroker,
+                    onViewController: self
+                )
             }
         )
-    }
-
-    @IBAction func symbolButtonWasTapped(_ sender: AnyObject) {
-        presentSymbolSelectionScreen()
-    }
-
-    @IBAction func accountButtonTapped(_ sender: UIButton) {
-        presentAccountSelectionScreen()
-    }
-
-    // MARK: Private
-
-    private func prepopulateOrderForm() {
-        orderActionSelected(orderAction: TradeItOrderActionPresenter.labelFor(order.action))
-        orderTypeSelected(orderType: TradeItOrderPriceTypePresenter.labelFor(order.type))
-        orderExpirationSelected(orderExpiration: TradeItOrderExpirationPresenter.labelFor(order.expiration))
-
-        orderQuantityInput.text = order.quantity?.stringValue
-        switch order.type {
-        case .limit:
-            orderTypeInput1.text = order.limitPrice?.stringValue
-        case .stopMarket:
-            orderTypeInput1.text = order.stopPrice?.stringValue
-        case .stopLimit:
-            orderTypeInput1.text = order.limitPrice?.stringValue
-            orderTypeInput2.text = order.stopPrice?.stringValue
-        default:
-            break
-        }
-    }
-
-    private func presentSymbolSelectionScreen() {
-        let symbolSearchViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.symbolSearchView) as! TradeItSymbolSearchViewController
-
-        symbolSearchViewController.delegate = self
-
-        self.navigationController?.pushViewController(symbolSearchViewController, animated: true)
-    }
-
-    private func presentAccountSelectionScreen() {
-        let accountSelectionViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.accountSelectionView) as! TradeItAccountSelectionViewController
-
-        accountSelectionViewController.delegate = self
-
-        self.navigationController?.pushViewController(accountSelectionViewController, animated: true)
-    }
-
-    // MARK: TradeItSymbolSearchViewControllerDelegate
-
-    func symbolSearchViewController(_ symbolSearchViewController: TradeItSymbolSearchViewController,
-                                    didSelectSymbol selectedSymbol: String) {
-        self.order.symbol = selectedSymbol
-        updateSymbolView()
-        updateTradingBrokerAccountView()
-        _ = symbolSearchViewController.navigationController?.popViewController(animated: true)
     }
 
     // MARK: TradeItAccountSelectionViewControllerDelegate
 
-    func accountSelectionViewController(_ accountSelectionViewController: TradeItAccountSelectionViewController,
-                                        didSelectLinkedBrokerAccount linkedBrokerAccount: TradeItLinkedBrokerAccount) {
-
-        accountSelected(linkedBrokerAccount: linkedBrokerAccount)
-        _ = accountSelectionViewController.navigationController?.popViewController(animated: true)
-    }
-
-    // MARK: Private - Order changed handlers
-
-    private func accountSelected(linkedBrokerAccount: TradeItLinkedBrokerAccount) {
+    func accountSelectionViewController(
+        _ accountSelectionViewController: TradeItAccountSelectionViewController,
+        didSelectLinkedBrokerAccount linkedBrokerAccount: TradeItLinkedBrokerAccount
+    ) {
         self.order.linkedBrokerAccount = linkedBrokerAccount
-
-        let activityView = MBProgressHUD.showAdded(to: self.view, animated: true)
-        activityView.label.text = "Authenticating"
-
-        linkedBrokerAccount.linkedBroker.authenticateIfNeeded(onSuccess: {
-            activityView.hide(animated: true)
-            linkedBrokerAccount.getAccountOverview(onSuccess: { _ in
-                self.updateSymbolView()
-                self.updateTradingBrokerAccountView()
-            }, onFailure: { errorResult in
-                self.alertManager.showError(errorResult, onViewController: self)
-            })
-        }, onSecurityQuestion: { securityQuestion, answerSecurityQuestion, cancelQuestion in
-            activityView.hide(animated: true)
-            self.alertManager.promptUserToAnswerSecurityQuestion(
-                securityQuestion,
-                onViewController: self,
-                onAnswerSecurityQuestion: answerSecurityQuestion,
-                onCancelSecurityQuestion: cancelQuestion
-            )
-        }, onFailure: { errorResult in
-            activityView.hide(animated: true)
-            self.alertManager.showError(errorResult, onViewController: self)
-        })
+        self.selectedAccountChanged()
+        _ = self.navigationController?.popViewController(animated: true)
     }
 
-    private func orderActionSelected(_ action: UIAlertAction) {
-        orderActionSelected(orderAction: action.title)
+    // MARK: TradeItSymbolSearchViewControllerDelegate
+
+    func symbolSearchViewController(
+        _ symbolSearchViewController: TradeItSymbolSearchViewController,
+        didSelectSymbol selectedSymbol: String
+    ) {
+        self.order.symbol = selectedSymbol
+        _ = symbolSearchViewController.navigationController?.popViewController(animated: true)
     }
 
-    private func orderTypeSelected(action: UIAlertAction) {
-        orderTypeSelected(orderType: action.title)
-    }
+    // MARK: Private
 
-    private func orderExpirationSelected(_ action: UIAlertAction) {
-        orderExpirationSelected(orderExpiration: action.title)
-    }
-
-    private func orderActionSelected(orderAction: String!) {
-        order.action = TradeItOrderActionPresenter.enumFor(orderAction)
-        orderActionButton.setTitle(TradeItOrderActionPresenter.labelFor(order.action), for: UIControlState())
-
-        if order.action == .buy {
-            tradingBrokerAccountView.updatePresentationMode(.buyingPower)
-        } else {
-            tradingBrokerAccountView.updatePresentationMode(.sharesOwned)
-        }
-    }
-
-    private func orderTypeSelected(orderType: String!) {
-        order.type = TradeItOrderPriceTypePresenter.enumFor(orderType)
-        orderTypeButton.setTitle(TradeItOrderPriceTypePresenter.labelFor(order.type), for: UIControlState())
-
-        // Show/hide order expiration
-        if order.requiresExpiration() {
-            orderExpirationButton.superview?.isHidden = false
-        } else {
-            orderExpirationButton.superview?.isHidden = true
-        }
-
-        // Show/hide limit and/or stop
-        var inputs = [orderTypeInput1, orderTypeInput2]
-
-        inputs.forEach { input in
-            input?.isHidden = true
-            input?.text = nil
-        }
-
-        if order.requiresLimitPrice() {
-            configureLimitInput(inputs.removeFirst()!)
-        }
-
-        if order.requiresStopPrice() {
-            configureStopInput(inputs.removeFirst()!)
-        }
-
-        updatePreviewOrderButtonStatus()
-    }
-
-    private func orderExpirationSelected(orderExpiration: String!) {
-        order.expiration = TradeItOrderExpirationPresenter.enumFor(orderExpiration)
-        orderExpirationButton.setTitle(TradeItOrderExpirationPresenter.labelFor(order.expiration), for: UIControlState())
-    }
-
-    private func updatePreviewOrderButtonStatus() {
-        if order.isValid() {
-            previewOrderButton.isEnabled = true
-            previewOrderButton.backgroundColor = UIColor.tradeItClearBlueColor()
-        } else {
-            previewOrderButton.isEnabled = false
-            previewOrderButton.backgroundColor = UIColor.tradeItGreyishBrownColor()
-        }
-    }
-
-    private func updateSymbolView() {
-        guard let symbol = order.symbol else { return }
-
-        symbolView.updateSymbol(symbol)
-        symbolView.updateQuoteActivity(.loading)
-
-        TradeItSDK.marketDataService.getQuote(symbol, onSuccess: { quote in
-            let presenter = TradeItQuotePresenter(quote)
-            self.order.quoteLastPrice = presenter.getLastPriceValue()
-            self.symbolView.updateQuote(quote)
-            self.symbolView.updateQuoteActivity(.loaded)
-            self.updateEstimatedChangedLabel()
-        }, onFailure: { error in
-            self.order.quoteLastPrice = nil
-            self.symbolView.updateQuote(nil)
-            self.symbolView.updateQuoteActivity(.loaded)
-            self.updateEstimatedChangedLabel()
-        })
-
-        updateSharesOwnedLabel()
-    }
-
-    private func updateTradingBrokerAccountView() {
-        guard let linkedBrokerAccount = order.linkedBrokerAccount else { return }
-
-        linkedBrokerAccount.linkedBroker.authenticateIfNeeded(onSuccess: {
-            linkedBrokerAccount.getAccountOverview(onSuccess: { _ in
-                self.tradingBrokerAccountView.updateBrokerAccount(linkedBrokerAccount)
-                self.updateSharesOwnedLabel()
-            }, onFailure: { errorResult in
-                self.alertManager.showError(errorResult, onViewController: self)
-            })
-        }, onSecurityQuestion: { securityQuestion, answerSecurityQuestion, cancelQuestion in
-            self.alertManager.promptUserToAnswerSecurityQuestion(
-                securityQuestion,
-                onViewController: self,
-                onAnswerSecurityQuestion: answerSecurityQuestion,
-                onCancelSecurityQuestion: cancelQuestion
-            )
-        }, onFailure: { errorResult in
-            self.alertManager.showError(errorResult, onViewController: self)
-        })
-    }
-
-    private func updateSharesOwnedLabel() {
-        guard let symbol = order.symbol
-            , let linkedBrokerAccount = order.linkedBrokerAccount
-            else { return }
-
-        linkedBrokerAccount.linkedBroker.authenticateIfNeeded(onSuccess: {
-            linkedBrokerAccount.getPositions(onSuccess: { positions in
-                let positionsMatchingSymbol = positions.filter { portfolioPosition in
-                    TradeItPortfolioPositionPresenterFactory.forTradeItPortfolioPosition(portfolioPosition).getFormattedSymbol() == symbol
+    private func selectedAccountChanged() {
+        self.order.linkedBrokerAccount?.linkedBroker?.authenticateIfNeeded(
+            onSuccess: {
+                if self.order.action == .buy {
+                    self.updateAccountOverview()
+                } else {
+                    self.updateSharesOwned()
                 }
-
-                guard let position = positionsMatchingSymbol.first else { return }
-
-                let presenter = TradeItPortfolioPositionPresenterFactory.forTradeItPortfolioPosition(position)
-                self.tradingBrokerAccountView.updateSharesOwned(presenter)
-            }, onFailure: { errorResult in
-                self.alertManager.showError(errorResult, onViewController: self)
-            })
-        }, onSecurityQuestion: { securityQuestion, answerSecurityQuestion, cancelQuestion in
-            self.alertManager.promptUserToAnswerSecurityQuestion(
-                securityQuestion,
-                onViewController: self,
-                onAnswerSecurityQuestion: answerSecurityQuestion,
-                onCancelSecurityQuestion: cancelQuestion
-            )
-        }, onFailure: { errorResult in
-            self.alertManager.showError(errorResult, onViewController: self)
-        })
-    }
-
-    // MARK: Private - Text view configurators
-
-    private func registerTextFieldNotifications() {
-        let orderTypeInputs = [orderQuantityInput, orderTypeInput1, orderTypeInput2]
-
-        orderTypeInputs.forEach { input in
-            input?.addTarget(
-                self,
-                action: #selector(self.textFieldDidChange(_:)),
-                for: UIControlEvents.editingChanged
-            )
-        }
-    }
-
-    private func configureLimitInput(_ input: UITextField) {
-        input.placeholder = "Limit Price"
-        input.isHidden = false
-    }
-
-    private func configureStopInput(_ input: UITextField) {
-        input.placeholder = "Stop Price"
-        input.isHidden = false
-    }
-
-    private func updateEstimatedChangedLabel() {
-        if let estimatedChange = order.estimatedChange() {
-            let formattedEstimatedChange = NumberFormatter.formatCurrency(estimatedChange, currencyCode: TradeItPresenter.DEFAULT_CURRENCY_CODE)
-            if order.action == .buy {
-                estimatedChangeLabel.text = "Est. Cost \(formattedEstimatedChange)"
-            } else {
-                estimatedChangeLabel.text = "Est. Proceeds \(formattedEstimatedChange)"
+            },
+            onSecurityQuestion: { securityQuestion, onAnswerSecurityQuestion, onCancelSecurityQuestion in
+                self.alertManager.promptUserToAnswerSecurityQuestion(
+                    securityQuestion,
+                    onViewController: self,
+                    onAnswerSecurityQuestion: onAnswerSecurityQuestion,
+                    onCancelSecurityQuestion: onCancelSecurityQuestion
+                )
+            },
+            onFailure: { error in
+                self.alertManager.showRelinkError(
+                    error: error,
+                    withLinkedBroker: self.order.linkedBrokerAccount?.linkedBroker,
+                    onViewController: self
+                )
             }
-        } else {
-            estimatedChangeLabel.text = nil
+        )
+    }
+
+    private func updateAccountOverview() {
+        self.order.linkedBrokerAccount?.getAccountOverview(
+            onSuccess: { accountOverview in
+                self.reload(row: .account)
+            },
+            onFailure: { error in
+                self.alertManager.showRelinkError(
+                    error: error,
+                    withLinkedBroker: self.order.linkedBrokerAccount?.linkedBroker,
+                    onViewController: self
+                )
+            }
+        )
+    }
+
+    private func updateSharesOwned() {
+        self.order.linkedBrokerAccount?.getPositions(
+            onSuccess: { positions in
+                self.reload(row: .account)
+            },
+            onFailure: { error in
+                self.alertManager.showRelinkError(
+                    error: error,
+                    withLinkedBroker: self.order.linkedBrokerAccount?.linkedBroker,
+                    onViewController: self
+                )
+            }
+        )
+    }
+
+    private func setTitle() {
+        var title = "Trade"
+
+        if self.order.action != TradeItOrderAction.unknown {
+            title = TradeItOrderActionPresenter.labelFor(self.order.action)
+        }
+
+        if let symbol = self.order.symbol {
+            title += " \(symbol)"
+        }
+
+        self.title = title
+    }
+
+    private func setOrderDefaults() {
+        if self.order.action == .unknown {
+            self.order.action = .buy
+        }
+
+        if self.order.expiration == .unknown {
+            self.order.expiration = .goodForDay
         }
     }
 
-    // MARK: Private - Keyboard event handlers
-
-    private func registerKeyboardNotifications() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(self.keyboardWillShow(_:)),
-            name: NSNotification.Name.UIKeyboardWillShow,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(self.keyboardWillHide(_:)),
-            name: NSNotification.Name.UIKeyboardWillHide,
-            object: nil
-        )
+    private func setPreviewButtonEnablement() {
+        if self.order.isValid() {
+            self.previewOrderButton.enable()
+        } else {
+            self.previewOrderButton.disable()
+        }
     }
 
-    @objc private func keyboardWillShow(_ notification: Notification) {
-        let info = (notification as NSNotification).userInfo!
-        let keyboardFrame: CGRect = (info[UIKeyboardFrameEndUserInfoKey] as! NSValue).cgRectValue
-
-        UIView.animate(withDuration: 0.1, animations: { () -> Void in
-            self.bottomConstraint.constant = keyboardFrame.size.height + TradeItTradingTicketViewController.BOTTOM_CONSTRAINT_CONSTANT
-        })
+    private func updateMarketData() {
+        if let symbol = self.order.symbol {
+            self.marketDataService.getQuote(
+                symbol: symbol,
+                onSuccess: { quote in
+                    self.quotePresenter = TradeItQuotePresenter(quote)
+                    self.order.quoteLastPrice = self.quotePresenter?.getLastPriceValue()
+                    self.reload(row: .marketPrice)
+                    self.reload(row: .estimatedCost)
+                },
+                onFailure: { error in
+                    self.order.quoteLastPrice = nil
+                }
+            )
+        } else {
+            self.order.quoteLastPrice = nil
+        }
     }
 
-    @objc private func keyboardWillHide(_: Notification) {
-        UIView.animate(withDuration: 0.1, animations: { () -> Void in
-            self.bottomConstraint.constant = TradeItTradingTicketViewController.BOTTOM_CONSTRAINT_CONSTANT
-        })
+    private func reloadTicket() {
+        self.setTitle()
+        self.setPreviewButtonEnablement()
+        self.selectedAccountChanged()
+        self.updateMarketData()
+
+        var ticketRows: [TicketRow] = [
+            .account,
+            .symbol,
+            .marketPrice,
+            .orderAction,
+            .orderType,
+            .expiration,
+            .quantity,
+        ]
+
+        if self.order.requiresLimitPrice() {
+            ticketRows.append(.limitPrice)
+        }
+
+        if self.order.requiresStopPrice() {
+            ticketRows.append(.stopPrice)
+        }
+
+        ticketRows.append(.estimatedCost)
+
+        self.ticketRows = ticketRows
+
+        self.tableView.reloadData()
     }
 
-    // MARK: Private - Action sheet helper
+    private func reload(row: TicketRow) {
+        guard let indexOfRow = self.ticketRows.index(of: row) else {
+            return
+        }
 
-    private func presentOptions(title: String, options: [String], sender: UIButton, handler: @escaping (UIAlertAction) -> Void) {
-        let actionSheet: UIAlertController = UIAlertController(
-            title: title,
-            message: nil,
-            preferredStyle: .actionSheet
-        )
+        let indexPath = IndexPath.init(row: indexOfRow, section: 0)
+        self.tableView.reloadRows(at: [indexPath], with: .automatic)
+    }
 
-        actionSheet.popoverPresentationController?.sourceView = sender
+    private func provideCell(rowIndex: Int) -> UITableViewCell {
+        let ticketRow = self.ticketRows[rowIndex]
 
-        options.map { option in UIAlertAction(title: option, style: .default, handler: handler) }
-            .forEach(actionSheet.addAction)
+        let cell = tableView.dequeueReusableCell(withIdentifier: ticketRow.cellReuseId) ?? UITableViewCell()
+        cell.textLabel?.text = ticketRow.getTitle(forOrder: self.order)
+        cell.selectionStyle = .none
         
-        actionSheet.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+        TradeItThemeConfigurator.configure(view: cell)
+        
+        switch ticketRow {
+        case .symbol:
+            cell.detailTextLabel?.text = self.order.symbol
+        case .orderAction:
+            cell.detailTextLabel?.text = TradeItOrderActionPresenter.labelFor(self.order.action)
+        case .quantity:
+            (cell as? TradeItNumericInputCell)?.configure(
+                initialValue: self.order.quantity,
+                placeholderText: "Enter shares",
+                onValueUpdated: { newValue in
+                    self.order.quantity = newValue
+                    self.reload(row: .estimatedCost)
+                    self.setPreviewButtonEnablement()
+                }
+            )
+        case .limitPrice:
+            (cell as? TradeItNumericInputCell)?.configure(
+                initialValue: self.order.limitPrice,
+                placeholderText: "Enter limit price",
+                onValueUpdated: { newValue in
+                    self.order.limitPrice = newValue
+                    self.reload(row: .estimatedCost)
+                    self.setPreviewButtonEnablement()
+                }
+            )
+        case .stopPrice:
+            (cell as? TradeItNumericInputCell)?.configure(
+                initialValue: self.order.stopPrice,
+                placeholderText: "Enter stop price",
+                onValueUpdated: { newValue in
+                    self.order.stopPrice = newValue
+                    self.reload(row: .estimatedCost)
+                    self.setPreviewButtonEnablement()
+                }
+            )
+        case .marketPrice:
+            guard let marketCell = cell as? TradeItSubtitleWithDetailsCellTableViewCell else { return cell }
+            marketCell.configure(quotePresenter: self.quotePresenter)
+        case .estimatedCost:
+            var estimateChangeText = "N/A"
 
-        self.present(actionSheet, animated: true, completion: nil)
+            if let estimatedChange = order.estimatedChange() {
+                estimateChangeText = NumberFormatter.formatCurrency(
+                    estimatedChange,
+                    currencyCode: TradeItPresenter.DEFAULT_CURRENCY_CODE)
+            }
+
+            cell.detailTextLabel?.text = estimateChangeText
+        case .orderType:
+            cell.detailTextLabel?.text = TradeItOrderPriceTypePresenter.labelFor(self.order.type)
+        case .expiration:
+            cell.detailTextLabel?.text = TradeItOrderExpirationPresenter.labelFor(self.order.expiration)
+        case .account:
+            guard let detailCell = cell as? TradeItSelectionDetailCellTableViewCell else { return cell }
+            detailCell.configure(
+                detailPrimaryText: self.order.linkedBrokerAccount?.getFormattedAccountName(),
+                detailSecondaryText: accountSecondaryText()
+            )
+        }
+        return cell
+    }
+
+    private func accountSecondaryText() -> String? {
+        if self.order.action == .buy {
+            return buyingPowerText()
+        } else {
+            return sharesOwnedText()
+        }
+    }
+
+    private func buyingPowerText() -> String? {
+        guard let buyingPower = self.order.linkedBrokerAccount?.balance?.buyingPower else { return nil }
+        return "Buying Power: " + NumberFormatter.formatCurrency(
+            buyingPower,
+            currencyCode: self.order.linkedBrokerAccount?.accountBaseCurrency
+        )
+    }
+
+    private func sharesOwnedText() -> String? {
+        guard let positions = self.order.linkedBrokerAccount?.positions, !positions.isEmpty else { return nil }
+
+        let positionMatchingSymbol = positions.filter { portfolioPosition in
+            TradeItPortfolioEquityPositionPresenter(portfolioPosition).getFormattedSymbol() == self.order.symbol
+            }.first
+
+        let sharesOwned = positionMatchingSymbol?.position?.quantity ?? 0
+        return "Shares Owned: " + NumberFormatter.formatQuantity(sharesOwned)
+    }
+
+    enum TicketRow {
+        case account
+        case orderAction
+        case orderType
+        case quantity
+        case expiration
+        case limitPrice
+        case stopPrice
+        case symbol
+        case marketPrice
+        case estimatedCost
+
+        private enum CellReuseId: String {
+            case readOnly = "TRADING_TICKET_READ_ONLY_CELL_ID"
+            case numericInput = "TRADING_TICKET_NUMERIC_INPUT_CELL_ID"
+            case selection = "TRADING_TICKET_SELECTION_CELL_ID"
+            case selectionDetail = "TRADING_TICKET_SELECTION_DETAIL_CELL_ID"
+            case marketData = "TRADING_TICKET_MARKET_DATA_CELL_ID"
+        }
+
+        var cellReuseId: String {
+            var cellReuseId: CellReuseId
+
+            switch self {
+            case .symbol:
+                cellReuseId = .selection
+            case .orderAction:
+                cellReuseId = .selection
+            case .estimatedCost:
+                cellReuseId = .readOnly
+            case .quantity, .limitPrice, .stopPrice:
+                cellReuseId = .numericInput
+            case .orderType, .expiration:
+                cellReuseId = .selection
+            case .marketPrice:
+                cellReuseId = .marketData
+            case .account:
+                cellReuseId = .selectionDetail
+            }
+
+            return cellReuseId.rawValue
+        }
+
+        func getTitle(forOrder order: TradeItOrder) -> String {
+            switch self {
+            case .symbol:
+                return "Symbol"
+            case .orderAction:
+                return "Action"
+            case .estimatedCost:
+                let sellActions: [TradeItOrderAction] = [.sell, .sellShort]
+                let title = "Estimated \(sellActions.contains(order.action) ? "proceeds" : "cost")"
+                return title
+            case .quantity:
+                return "Shares"
+            case .limitPrice:
+                return "Limit"
+            case .stopPrice:
+                return "Stop"
+            case .orderType:
+                return "Order type"
+            case .expiration:
+                return "Time in force"
+            case .marketPrice:
+                return "Market price"
+            case .account:
+                return "Account"
+            }
+        }
     }
 }
 
 protocol TradeItTradingTicketViewControllerDelegate: class {
-    func orderSuccessfullyPreviewed(onTradingTicketViewController tradingTicketViewController: TradeItTradingTicketViewController,
-                                           withPreviewOrderResult previewOrderResult: TradeItPreviewOrderResult,
-                                                                  placeOrderCallback: @escaping TradeItPlaceOrderHandlers)
+    func orderSuccessfullyPreviewed(
+        onTradingTicketViewController tradingTicketViewController: TradeItTradingTicketViewController,
+        withPreviewOrderResult previewOrderResult: TradeItPreviewOrderResult,
+        placeOrderCallback: @escaping TradeItPlaceOrderHandlers
+    )
 }

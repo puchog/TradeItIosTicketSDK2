@@ -2,6 +2,13 @@ import UIKit
 
 @objc class TradeItTradingConfirmationViewController: TradeItViewController {
     @IBOutlet weak var confirmationTextLabel: UILabel!
+    @IBOutlet weak var viewPortfolioButton: UIButton!
+    @IBOutlet weak var timeStampLabel: UILabel!
+    @IBOutlet weak var orderNumberLabel: UILabel!
+    @IBOutlet weak var tradeAgainButton: UIButton!
+    @IBOutlet weak var adContainer: UIView!
+
+    var previewOrderResult: TradeItPreviewOrderResult?
     var placeOrderResult: TradeItPlaceOrderResult?
     var viewControllerProvider = TradeItViewControllerProvider()
     var tradingUIFlow = TradeItTradingUIFlow()
@@ -11,18 +18,45 @@ import UIKit
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        guard let placeOrderResult = placeOrderResult else { return }
-        confirmationTextLabel.text = placeOrderResult.confirmationMessage
+        self.viewPortfolioButton.isHidden = !TradeItSDK.isPortfolioEnabled
+
+        self.setConfirmationMessage()
+
+        self.timeStampLabel.text = self.placeOrderResult?.timestamp ?? ""
+        self.orderNumberLabel.text = "Order #\(self.placeOrderResult?.orderNumber ?? "")"
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .confirmation, position: .bottom)
    }
+
+    // MARK: IBActions
     @IBAction func tradeButtonWasTapped(_ sender: AnyObject) {
         self.delegate?.tradeButtonWasTapped(self)
     }
     
     @IBAction func portfolioButtonWasTapped(_ sender: AnyObject) {
         if let navigationController = self.navigationController {
-            let initialViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.portfolioView)
-            navigationController.setViewControllers([initialViewController], animated: true)
+            let portfolioViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.portfolioAccountsView)
+            navigationController.setViewControllers([portfolioViewController], animated: true)
         }
+    }
+
+    // MARK: Private
+    private func setConfirmationMessage() {
+        let orderDetails = self.previewOrderResult?.orderDetails
+        let orderInfo = self.placeOrderResult?.orderInfo
+
+        let actionText = orderInfo?.action ?? "[MISSING ACTION]"
+        let symbolText = orderInfo?.symbol ?? "[MISSING SYMBOL]"
+        let priceText = orderDetails?.orderPrice ?? "[MISSING PRICE]"
+        var quantityText = "[MISSING QUANTITY]"
+
+        if let quantity = orderInfo?.quantity {
+            quantityText = NumberFormatter.formatQuantity(quantity)
+        }
+
+        let confirmationMessage = "Your order to \(actionText) \(quantityText) shares of \(symbolText) at \(priceText) has been successfully transmitted to your broker"
+
+        self.confirmationTextLabel.text = confirmationMessage
     }
 }
 

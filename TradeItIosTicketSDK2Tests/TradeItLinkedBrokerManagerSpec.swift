@@ -104,6 +104,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
 
         describe("linkBroker") {
             var onSuccessCallbackWasCalled = 0
+            var onSecurityQuestionCallbackWasCalled = 0
             var onFailureCallbackWasCalled = 0
 
             var returnedLinkedBroker: TradeItLinkedBroker! = nil
@@ -112,6 +113,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
 
             beforeEach {
                 onSuccessCallbackWasCalled = 0
+                onSecurityQuestionCallbackWasCalled = 0
                 onFailureCallbackWasCalled = 0
 
                 let authInfo = TradeItAuthenticationInfo(id: "My Special Username",
@@ -123,6 +125,9 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                     onSuccess: { (linkedBroker: TradeItLinkedBroker) -> Void in
                         onSuccessCallbackWasCalled += 1
                         returnedLinkedBroker = linkedBroker
+                    },
+                    onSecurityQuestion: { _, _, _ in
+                        onSecurityQuestionCallbackWasCalled += 1
                     },
                     onFailure: { (tradeItErrorResult: TradeItErrorResult) in
                         onFailureCallbackWasCalled += 1
@@ -525,8 +530,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                     }
 
                     it("calls onFinishedAuthenticating") {
-                        // TODO: This test is very flakey. Need to figure out how to fix it. Running it by itself it is fine.
-                        expect(onFinishedAuthenticatingWasCalled).to(equal(1))
+                        expect(onFinishedAuthenticatingWasCalled).toEventually(equal(1))
                     }
                 }
             }
@@ -566,14 +570,14 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                 let account11 = TradeItLinkedBrokerAccount(linkedBroker: linkedBroker1, accountName: "My account #11", accountNumber: "123456789", balance: nil, fxBalance: nil, positions: [])
                 let account12 = TradeItLinkedBrokerAccount(linkedBroker: linkedBroker1, accountName: "My account #12", accountNumber: "234567890", balance: nil, fxBalance: nil, positions: [])
                 linkedBroker1.accounts = [account11, account12]
-                linkedBroker1.error = nil
+                linkedBroker1.clearError()
 
                 let linkedLogin2 = TradeItLinkedLogin(label: "My linked login 2", broker: "Broker #2", userId: "userId2", andKeyChainId: "keychainId2")
                 let tradeItSession2 = FakeTradeItSession()
                 linkedBroker2 = FakeTradeItLinkedBroker(session: tradeItSession2, linkedLogin: linkedLogin2)
                 let account21 = TradeItLinkedBrokerAccount(linkedBroker: linkedBroker2, accountName: "My account #21", accountNumber: "5678901234", balance: nil, fxBalance: nil, positions: [])
                 linkedBroker2.accounts = [account21]
-                linkedBroker2.error = nil
+                linkedBroker2.clearError()
 
                 let linkedLogin3 = TradeItLinkedLogin(label: "My linked login 3", broker: "Broker #3", userId: "userId3", andKeyChainId: "keychainId2")
                 let tradeItSession3 = FakeTradeItSession()
@@ -619,7 +623,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                 }
 
                 it("calls onFinishedRefreshingBalancesWasCalled") {
-                    expect(onFinishedRefreshingBalancesWasCalled).to(equal(1))
+                    expect(onFinishedRefreshingBalancesWasCalled).toEventually(equal(1))
                 }
             }
         }
@@ -627,6 +631,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
     
         describe("relinkBroker") {
             var onSuccessCallbackWasCalled = 0
+            var onSecurityQuestionWasCalled = 0
             var onFailureCallbackWasCalled = 0
             
             var returnedLinkedBroker: TradeItLinkedBroker! = nil
@@ -639,6 +644,7 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                 relinkLinkedBroker = TradeItLinkedBroker(session: relinkSession, linkedLogin: TradeItLinkedLogin(label: "my label", broker: "My broker", userId: "My user Id", andKeyChainId: "My keychain Id "))
                 linkedBrokerManager.linkedBrokers = [relinkLinkedBroker]
                 onSuccessCallbackWasCalled = 0
+                onSecurityQuestionWasCalled = 0
                 onFailureCallbackWasCalled = 0
                 
                 let authInfo = TradeItAuthenticationInfo(id: "My Special Username",
@@ -651,6 +657,9 @@ class TradeItLinkedBrokerManagerSpec: QuickSpec {
                     onSuccess: { (linkedBroker: TradeItLinkedBroker) -> Void in
                         onSuccessCallbackWasCalled += 1
                         returnedLinkedBroker = linkedBroker
+                    },
+                    onSecurityQuestion: { _, _, _ in
+                        onSecurityQuestionWasCalled += 1
                     },
                     onFailure: { (tradeItErrorResult: TradeItErrorResult) in
                         onFailureCallbackWasCalled += 1

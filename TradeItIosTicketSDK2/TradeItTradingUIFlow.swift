@@ -4,6 +4,7 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
 
     let viewControllerProvider: TradeItViewControllerProvider = TradeItViewControllerProvider()
     var order = TradeItOrder()
+    var previewOrderResult: TradeItPreviewOrderResult?
 
     func pushTradingFlow(onNavigationController navController: UINavigationController,
                                                 asRootViewController: Bool,
@@ -23,10 +24,9 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
                             withOrder order: TradeItOrder = TradeItOrder()) {
         self.order = order
 
-        let navController = UINavigationController()
-
         let initialViewController = getInitialViewController(forOrder: order)
 
+        let navController = UINavigationController()
         navController.setViewControllers([initialViewController], animated: true)
 
         viewController.present(navController, animated: true, completion: nil)
@@ -35,9 +35,14 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
     // MARK: Private
 
     private func initializeLinkedAccount(forOrder order: TradeItOrder) {
-        let enabledAccounts = TradeItSDK.linkedBrokerManager.getAllEnabledAccounts()
+        if order.linkedBrokerAccount == nil {
+            let enabledAccounts = TradeItSDK.linkedBrokerManager.getAllEnabledAccounts()
 
-        order.linkedBrokerAccount = enabledAccounts.first
+            // If there is only one enabled account, auto-select it
+            if enabledAccounts.count == 1 {
+                order.linkedBrokerAccount = enabledAccounts.first
+            }
+        }
     }
 
     private func getInitialViewController(forOrder order: TradeItOrder) -> UIViewController {
@@ -69,8 +74,8 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
 
     // MARK: TradeItSymbolSearchViewControllerDelegate
 
-    func symbolSearchViewController(_ symbolSearchViewController: TradeItSymbolSearchViewController,
-                                    didSelectSymbol selectedSymbol: String) {
+    internal func symbolSearchViewController(_ symbolSearchViewController: TradeItSymbolSearchViewController,
+                                             didSelectSymbol selectedSymbol: String) {
         self.order.symbol = selectedSymbol
 
         let tradingTicketViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.tradingTicketView) as! TradeItTradingTicketViewController
@@ -83,8 +88,8 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
 
     // MARK: TradeItAccountSelectionViewControllerDelegate
 
-    func accountSelectionViewController(_ accountSelectionViewController: TradeItAccountSelectionViewController,
-                                        didSelectLinkedBrokerAccount linkedBrokerAccount: TradeItLinkedBrokerAccount) {
+    internal func accountSelectionViewController(_ accountSelectionViewController: TradeItAccountSelectionViewController,
+                                                 didSelectLinkedBrokerAccount linkedBrokerAccount: TradeItLinkedBrokerAccount) {
         self.order.linkedBrokerAccount = linkedBrokerAccount
 
         var nextStoryboardId: TradeItStoryboardID!
@@ -106,43 +111,45 @@ class TradeItTradingUIFlow: NSObject, TradeItAccountSelectionViewControllerDeleg
 
         accountSelectionViewController.navigationController?.setViewControllers([nextViewController], animated: true)
     }
-    
+
     // MARK: TradeItTradingTicketViewControllerDelegate
 
-    func orderSuccessfullyPreviewed(
+    internal func orderSuccessfullyPreviewed(
         onTradingTicketViewController tradingTicketViewController: TradeItTradingTicketViewController,
-               withPreviewOrderResult previewOrderResult: TradeItPreviewOrderResult,
-                                      placeOrderCallback: @escaping TradeItPlaceOrderHandlers) {
+        withPreviewOrderResult previewOrderResult: TradeItPreviewOrderResult,
+        placeOrderCallback: @escaping TradeItPlaceOrderHandlers) {
+        self.previewOrderResult = previewOrderResult
+
         let nextViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.tradingPreviewView)
-        
+
         if let tradePreviewViewController = nextViewController as? TradeItTradePreviewViewController {
             tradePreviewViewController.delegate = self
             tradePreviewViewController.linkedBrokerAccount = tradingTicketViewController.order.linkedBrokerAccount
             tradePreviewViewController.previewOrderResult = previewOrderResult
             tradePreviewViewController.placeOrderCallback = placeOrderCallback
         }
-        
+
         tradingTicketViewController.navigationController?.pushViewController(nextViewController, animated: true)
-        
     }
     
     // MARK: TradeItTradePreviewViewControllerDelegate
 
-    func orderSuccessfullyPlaced(onTradePreviewViewController tradePreviewViewController: TradeItTradePreviewViewController,
-                                   withPlaceOrderResult placeOrderResult: TradeItPlaceOrderResult) {
+    internal func orderSuccessfullyPlaced(onTradePreviewViewController tradePreviewViewController: TradeItTradePreviewViewController,
+                                          withPlaceOrderResult placeOrderResult: TradeItPlaceOrderResult) {
         let nextViewController = self.viewControllerProvider.provideViewController(forStoryboardId: TradeItStoryboardID.tradingConfirmationView)
-        
+
         if let tradingConfirmationViewController = nextViewController as? TradeItTradingConfirmationViewController {
             tradingConfirmationViewController.delegate = self
+            tradingConfirmationViewController.previewOrderResult = self.previewOrderResult
             tradingConfirmationViewController.placeOrderResult = placeOrderResult
         }
-        
+
         tradePreviewViewController.navigationController?.setViewControllers([nextViewController], animated: true)
     }
-    
+
     // MARK: TradeItTradingConfirmationViewControllerDelegate
 
-    func tradeButtonWasTapped(_ tradeItTradingConfirmationViewController: TradeItTradingConfirmationViewController) {
+    internal func tradeButtonWasTapped(_ tradeItTradingConfirmationViewController: TradeItTradingConfirmationViewController) {
         if let navigationController = tradeItTradingConfirmationViewController.navigationController {
             self.pushTradingFlow(onNavigationController: navigationController, asRootViewController: true)
         } else if let presentingViewController = tradeItTradingConfirmationViewController.presentingViewController {

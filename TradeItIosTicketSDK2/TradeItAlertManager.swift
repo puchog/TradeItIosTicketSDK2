@@ -9,7 +9,7 @@ import UIKit
                           onFinished: @escaping () -> Void = {}) {
         let title = error.shortMessage ?? ""
         let messages = (error.longMessages as? [String]) ?? []
-        let message = messages.joined(separator: ". ")
+        let message = messages.joined(separator: ".\n\n")
         let actionTitle = "OK"
 
         self.showAlert(onViewController: viewController,
@@ -19,28 +19,33 @@ import UIKit
                     onAlertActionTapped: onFinished)
     }
 
-    public func showRelinkError(_ error: TradeItErrorResult,
-                                withLinkedBroker linkedBroker: TradeItLinkedBroker,
+    public func showRelinkError(error: TradeItErrorResult,
+                                withLinkedBroker linkedBroker: TradeItLinkedBroker?,
                                 onViewController viewController: UIViewController,
-                                onFinished: @escaping () -> Void) {
+                                oAuthCallbackUrl: URL = TradeItSDK.oAuthCallbackUrl,
+                                onFinished: @escaping () -> Void = {}) {
+        guard let linkedBroker = linkedBroker else {
+            return self.showError(
+                error,
+                onViewController: viewController,
+                onFinished: onFinished
+            )
+        }
+
         let onAlertActionRelinkAccount: () -> Void = {
             self.linkBrokerUIFlow.presentRelinkBrokerFlow(
                 inViewController: viewController,
                 linkedBroker: linkedBroker,
-                onLinked: { presentedNavController, linkedBroker in
-                    presentedNavController.dismiss(animated: true, completion: nil)
-                    linkedBroker.refreshAccountBalances(onFinished: onFinished)
-                },
-                onFlowAborted: { _ in onFinished() }
+                oAuthCallbackUrl: oAuthCallbackUrl
             )
         }
 
-        switch error.errorCode() {
-        case .brokerAuthenticationError?:
+        switch error.errorCode {
+        case .brokerLinkError?:
             self.showAlert(
                 onViewController: viewController,
-                withTitle: "Update Login",
-                withMessage: "There seems to be a problem connecting with your \(linkedBroker.linkedLogin.broker) account. Please update your login information.",
+                withTitle: "Relink \(linkedBroker.brokerName)",
+                withMessage: "Please relink your \(linkedBroker.brokerName) account. Your credentials may have changed with your broker.",
                 withActionTitle: "Update",
                 onAlertActionTapped: onAlertActionRelinkAccount,
                 showCancelAction: true,
@@ -49,17 +54,18 @@ import UIKit
         case .oauthError?:
             self.showAlert(
                 onViewController: viewController,
-                withTitle: "Relink \(linkedBroker.linkedLogin.broker) Accounts",
-                withMessage: "For your security, we automatically unlink any accounts that have not been used in the past 30 days. Please relink your accounts.",
+                withTitle: "Relink \(linkedBroker.brokerName)",
+                withMessage: "Please relink your \(linkedBroker.brokerName) account. For your security we automatically unlink accounts if they are inactive for 30 days.",
                 withActionTitle: "Update",
                 onAlertActionTapped: onAlertActionRelinkAccount,
                 showCancelAction: true,
                 onCancelActionTapped: onFinished
             )
         default:
-            self.showError(error,
+            self.showError(
+                error,
                 onViewController: viewController,
-                      onFinished: onFinished
+                onFinished: onFinished
             )
         }
     }
@@ -134,6 +140,11 @@ private class TradeItAlertQueue {
         if alreadyPresentingAlert || queue.isEmpty { return }
         let alertContext = queue.removeFirst()
         alreadyPresentingAlert = true
-        alertContext.onViewController.present(alertContext.alertController, animated: true, completion: nil)
+
+        if alertContext.onViewController.isViewLoaded && (alertContext.onViewController.view.window != nil) {
+            alertContext.onViewController.present(alertContext.alertController, animated: true, completion: nil)
+        } else {
+            self.alertFinished()
+        }
     }
 }

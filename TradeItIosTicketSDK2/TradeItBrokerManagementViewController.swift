@@ -1,4 +1,4 @@
-import UIKit
+ import UIKit
 
 class TradeItBrokerManagementViewController: TradeItViewController, TradeItBrokerManagementViewControllerBrokersTableDelegate {
     let toSelectBrokerScreen = "TO_SELECT_BROKER_SCREEN"
@@ -6,50 +6,72 @@ class TradeItBrokerManagementViewController: TradeItViewController, TradeItBroke
     var brokerManagementTableManager = TradeItBrokerManagementTableViewManager()
     var selectedLinkedBroker: TradeItLinkedBroker!
     var linkBrokerUIFlow = TradeItLinkBrokerUIFlow()
+    var alertManager = TradeItAlertManager()
 
     @IBOutlet weak var brokersTableView: UITableView!
+    @IBOutlet weak var adContainer: UIView!
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         self.brokerManagementTableManager.delegate = self
         self.brokerManagementTableManager.brokersTable = self.brokersTableView
+
+        TradeItSDK.adService.populate(adContainer: adContainer, rootViewController: self, pageType: .general, position: .bottom)
     }
     
     override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
         self.brokerManagementTableManager.updateLinkedBrokers(withLinkedBrokers: TradeItSDK.linkedBrokerManager.linkedBrokers)
     }
-    
+
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        // TODO: CHANGE THIS TO BE A UIFLOW INSTEAD OF USING SEGUES
         if segue.identifier == toAccountManagementScreen {
-            if let destinationViewController = segue.destination as? TradeItAccountManagementViewController,
+            if let accountManagementViewController = segue.destination as? TradeItAccountManagementViewController,
                 let broker = self.selectedLinkedBroker {
-                destinationViewController.linkedBroker = broker
+                accountManagementViewController.linkedBroker = broker
             }
         }
     }
     
     // MARK: - TradeItBrokerManagementViewControllerBrokersTableDelegate methods
     
+    func authenticate(linkedBroker: TradeItLinkedBroker) {
+        linkedBroker.authenticateIfNeeded(
+            onSuccess: {
+                self.brokerManagementTableManager.updateLinkedBrokers(withLinkedBrokers: TradeItSDK.linkedBrokerManager.linkedBrokers)
+            },
+            onSecurityQuestion: { securityQuestion, answerSecurityQuestion, cancelSecurityQuestion in
+                self.alertManager.promptUserToAnswerSecurityQuestion(
+                    securityQuestion,
+                    onViewController: self,
+                    onAnswerSecurityQuestion: answerSecurityQuestion,
+                    onCancelSecurityQuestion: cancelSecurityQuestion
+                )
+            },
+            onFailure:  { error in
+                self.alertManager.showRelinkError(
+                    error: error,
+                    withLinkedBroker: linkedBroker,
+                    onViewController: self
+                )
+            }
+        )
+    }
+
+    
     func linkedBrokerWasSelected(_ selectedLinkedBroker: TradeItLinkedBroker) {
         self.selectedLinkedBroker = selectedLinkedBroker
         self.performSegue(withIdentifier: toAccountManagementScreen, sender: self)
     }
-
-    @IBAction func addAccountWasTapped(_ sender: AnyObject) {
+    
+    func addAccountWasTapped() {
         self.linkBrokerUIFlow.presentLinkBrokerFlow(
             fromViewController: self,
             showWelcomeScreen: false,
-            onLinked: { (presentedNavController: UINavigationController, linkedBroker: TradeItLinkedBroker) -> Void in
-                presentedNavController.dismiss(animated: true, completion: nil)
-                linkedBroker.refreshAccountBalances(
-                    onFinished: {
-                        self.brokerManagementTableManager.updateLinkedBrokers(withLinkedBrokers: TradeItSDK.linkedBrokerManager.linkedBrokers)
-                })
-            },
-            onFlowAborted: { (presentedNavController: UINavigationController) -> Void in
-                presentedNavController.dismiss(animated: true, completion: nil)
-            }
+            oAuthCallbackUrl: TradeItSDK.oAuthCallbackUrl
         )
     }
 }

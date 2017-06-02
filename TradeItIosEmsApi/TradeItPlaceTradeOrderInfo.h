@@ -7,15 +7,10 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "TIEMSJSONModel.h"
+#import <JSONModel/JSONModel.h>
 #import "TradeItPlaceTradeOrderInfoPrice.h"
 
-@interface TradeItPlaceTradeOrderInfo : TIEMSJSONModel<NSCopying>
-
-/**
- *  An overview of the order just placed, for example: Your order message B02DXFPD to buy 1 shares of GE at $25.00 has been successfully transmitted to Fidelity at 02/02/16 9:36 PM EST.
- */
-@property (nullable, copy) NSString *confirmationMessage;
+@interface TradeItPlaceTradeOrderInfo : JSONModel<NSCopying>
 
 /**
  *  The symbol passed into the order
